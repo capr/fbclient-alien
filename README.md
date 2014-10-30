@@ -1,4 +1,3 @@
-fbclient-alien
-==============
+This is a backup copy.
 
-Lua bindings for Firebird RDBMS (based on Lua 5.1 and alien)
+The project homepage is this: https://code.google.com/p/fbclient/
