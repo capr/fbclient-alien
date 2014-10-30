@@ -1,0 +1,65 @@
+<font size="3">
+== fbclient 0.5.0 is out! Read the [StatusAndFeatures full story]. ==
+
+Fbclient is a binding of the Firebird client library for the Lua language ([WhyLuaWhyFirebird why?]). It comes as a collection of Lua modules that allows you to connect and execute queries against the _[http://www.firebirdsql.org/ Firebird Relational Database]_. It aims at full API coverage.
+
+== Features ==
+  * 3-layer API: [ClassInterface objectual interface], [WrapperInterface procedural interface], and [http://code.google.com/p/fbclient/source/browse/lua/fbclient/binding.lua binding]
+  * written in Lua, all binding goes through [http://alien.luaforge.net/ alien]
+  * aims at full API coverage, including the latest Firebird API additions
+  * decimals of up to 15 digits of precision with only Lua numbers
+  * full 64bit integer and decimal number support through [BignumSupport bignum libraries]
+  * multi-database transactions
+  * blobs, both segmented blobs and blob streams
+  * info API: info on databases, transactions, statements, blobs, etc.
+  * error reporting API
+  * service manager API: remote backup & restore, repair, user management, etc.
+  * binding to multiple client libraries in the same application/process
+  * tested against all Firebird 2.0, 2.1 and 2.5 releases on 32bit Windows and Linux (test suite included).
+
+== Installation ==
+
+You can download and install fbclient automatically using !LuaRocks (see [http://code.google.com/p/fbclient/source/browse/ rockspec and package]):
+{{{
+luarocks install fbclient
+}}}
+
+Alternatively, you can download the sources manually, and add the fbclient directory to `package.path`, as with any Lua-only package. The dependencies are:
+  * [http://alien.luaforge.net/ alien] 0.5.0+ (some [BuildingAlien tips] on building it in case you need to)
+  * [http://loop.luaforge.net/ LOOP] 2.3+ (for the objectual interface only; only `loop.base` really making the whole dependency easy to remove if wanted)
+  * optionally one of the [BignumSupport supported bignum libraries], if you want support for 64bit integers and 16-18 digit decimals.
+
+You also need the fbclient (or fbembed) shared library itself plus its own dependencies. If you have Firebird installed on your client host, then it is already installed system-wide. Otherwise, you can find it in the binary distribution of Firebird for your platform (links to the right). Copy `firebird.msg` and all the shared libraries from `bin` to a place where your OS can find and load them. You can also get all the files from the test suite (see downloads section).
+
+== Usage ==
+{{{
+local fb = require 'fbclient.class'
+local at = fb.attach('localhost/3050:/my/db.fdb', 'SYSDBA', 'masterkey')
+local sql = 'select id, name from inventions where inventor = ? and name like ?'
+for st, id, name in at:exec(sql, 'Farnsworth', '%booth') do
+  print(id, name)
+end
+at:close()
+}}}
+Ok, fbclient can do a little more than that. Here's the main modules:
+  * `fbclient.class` - the OOP interface, described in ClassInterface
+  * `fbclient.wrapper` - the lower-level procedural interface, described in WrapperInterface
+  * `fbclient.service_class` - the ServiceManagerInterface, an OOP interface for accessing Firebird's Service Manager
+  * `fbclient.blob` - optional module for working with blobs (documented [http://code.google.com/p/fbclient/wiki/DatatypeMapping#Reading_and_writing_blobs here])
+  * `fbclient.decimal_*` - optional bignum support modules, described in BignumSupport
+
+If going procedural you may want to grab the Interbase 6 API Guide and Firebird 2.1 and 2.5 Release Notes (links to the right). Hopefully, you'd still prefer it to plain C.
+
+== Feedback ==
+
+If you have any suggestions, don't like the API or just want to share your experience using the library, drop me a note at `cosmin.apreutesei@gmail.com`. You can also leave comments on every page of the wiki, or beside the source code.
+
+Please use the [http://code.google.com/p/fbclient/issues/list issue tracker] for doing bugs & feat requests, this way they stick and you can track their progress. When reporting non-obvious bugs, it would help to specify your OS, server version, fbclient.dll (.so) version and database ODS version. Also, try downloading and running the automated test suite for your platform (it's very easy to setup) and see if it runs without any failures and that the output values look good.
+
+<wiki:gadget url="http://www.ohloh.net/p/486860/widgets/project_users_logo.xml" height="43" border="0"/>
+
+<br>
+----
+<font size="2">
+Copyright © Cosmin Apreutesei 2009<br>
+fbclient is open-source software, distributed under the terms of the MIT License.

@@ -1,0 +1,242 @@
+#summary mapping of datatypes between Lua and Firebird
+<font size="3">
+
+All data passing (setting parameters and retrieving column values) between Lua and Firebird goes through the methods of `xsqlvar` objects.
+
+Whether you are using `fbclient.class` or `fbclient.wrapper`, preparing a statement gets you two arrays of xsqlvars, one for setting parameters before executing the statement, and one for getting column values every time you fetch the next row from a result set (the columns table also lets you index columns by their alias name).
+
+==SQL types vs storage types==
+
+_Implementation in [http://code.google.com/p/fbclient/source/browse/lua/fbclient/xsqlvar.lua xsqlvar.lua]._
+
+The Firebird client API doesn't work with SQL types, instead you work directly with the corresponding _storage types_:
+
+|| *SQL type*            || *storage type* || *size/format* ||
+|| `DATE`                || date           || 32bit ||
+|| `TIME`                || time           || 32bit ||
+|| `TIMESTAMP`           || timestamp      || 64bit ||
+|| `DECIMAL(1-9,0-9)`    || int16          || 16bit, signed integer `(***)` ||
+|| `DECIMAL(10-15,0-15)` || int32          || 32bit, signed integer `(***)` ||
+|| `DECIMAL(16-18,0-18)` || int64          || 64bit, signed integer `(***)` ||
+|| `SMALLINT`            || int16          || 16bit, signed integer ||
+|| `INTEGER`             || int32          || 32bit, signed integer ||
+|| `BIGINT`              || int64          || 64bit, signed integer ||
+|| `VARCHAR`             || varchar        || string, up to 64k-1 bytes ||
+|| `CHAR`                || char           || space-padded string, up to 64k-1 bytes ||
+|| `BLOB`                || blob           || 32bit, blob id ||
+|| `ARRAY`               || array          || 32bit, blob id ||
+
+*(`***`) Format of decimals:* Firebird stores decimals as scaled integers using the formula n `*` 10^scale^. For instance the number 12.34 on a DECIMAL(18,4) column is stored as the 64bit integer whose decimal representation is 123400.
+
+===`xs:type() -> storage_type[, subtype]`===
+
+Returns the _storage type_ of the xsqlvar `xs`. Subtype is scale for numbers, max. length for strings, and blob subtype number for blobs.
+
+==Setting and testing for NULL==
+
+===`xs:allownull() -> true|false`===
+===`xs:isnull() -> true|false`===
+===`xs:setnull()`===
+
+==Reading and writing data==
+
+===`xs:gettime() -> time_t`===
+===`xs:settime(time_t)`===
+
+For `DATE`, `TIME`, and `TIMESTAMP` SQL types. `time_t` is as per `os.date()`, but with the additional field `sfrac`, meaning fractions of a second, an integer in the range 0-9999. It also has `__tostring` and `__type` in its metatable.
+{{{
+local xtype = fbclient.util.xtype
+
+local t = os.date("*t")
+t.sfrac = 9999
+st.params[1]:settime(t)
+...
+local t = st.columns.START_DATE:gettime()
+assert(xtype(t) == "fbclient.date")
+print(string.format("%d-%d-%d", t.year, t.month, t.day)
+
+local t = st.columns.DEPARTURE_TIME:gettime()
+assert(xtype(t) == "fbclient.time")
+print(string.format("%d:%d:%d.%d", t.hour, t.min, t.sec, t.sfrac))
+
+local t = st.columns.START_MOMENT:gettime()
+assert(xtype(t) == "fbclient.timestamp")
+print(t)
+}}}
+
+===`xs:getnumber() -> n`===
+===`xs:setnumber(n)`===
+
+For SQL types `FLOAT`, `DOUBLE PRECISION`, `SMALLINT`, `INTEGER`, `DECIMAL(1-15,0)`, and `BIGINT` for values in the range -2^52^ to 2^52-1^.
+
+===`xs:getparts() -> parts_t`===
+===`xs:setparts(parts_t)`===
+
+For SQL types `SMALLINT`, `INTEGER`, `DECIMAL(1-15,0-15)`, and `BIGINT` for values in the range -2^52^ to 2^52-1^. It has `__tostring` and `__type` in its metatable.
+{{{
+local xtype = fbclient.util.xtype
+
+st.params[1]:setparts{3,14}
+...
+local p = st.columns.PRICE:getparts()
+assert(xtype(p) == "fbclient.parts")
+print(p[1],p[2])
+print(p)
+}}}
+
+===`xs:getdecimal(df) -> d`===
+===`xs:setdecimal(d,sdf)`===
+
+For internal use by the bignum extension modules. For SQL types `SMALLINT`, `INTEGER`, `DECIMAL(1-18,0-18)`, and `BIGINT`. The `df` and `sdf` arguments are bignum interfacing functions defined in each bignum module.
+
+===`xs:getstring() -> s`===
+===`xs:getstringlength() -> n`===
+===`xs:setstring(s)`===
+
+For SQL types `VARCHAR` and `CHAR`. For `CHAR`, the returned string is space-padded upto `xs:getstringlength()`, and it is expected to be so too when setting it.
+
+===`xs:getunpadded(s)`===
+===`xs:setpadded(s)`===
+
+Convenience functions for ancient `CHAR` type that adds/strips the necessary space padding. There's no reason to use `CHAR` in contemporary applications.
+
+==Reading and writing blobs==
+
+_Implementation in [http://code.google.com/p/fbclient/source/browse/lua/fbclient/blob.lua blob.lua]_<br>
+_*Note:* Blob support is not loaded automatically, so be sure to _`require "fbclient.blob"`_ first._
+
+===`xs:open([bpb_options_t])`===
+
+Opens a blob for reading. Optionally, you can pass along a Blob Parameter Block (BPB) table of options. Reading starts from the beginning of the blob.
+
+===`xs:create(type, [storage = "main"], [bpb_options_t])`===
+
+Creates a new (empty) blob and opens it for writing. Type can be "segmented" or "stream". Storage can be "main" or "temp". Optionally, you can pass along a Blob Parameter Block (BPB) table of options. You can't open an existing blob for writing.
+
+===`xs:create_ex(bpb_options_t)`===
+
+Same as `xs:create()` but setup the blob via BPB.
+
+===`xs:close()`===
+
+Closes an open blob.
+
+===`xs:closed() -> true|false`===
+
+Checks to see if a blob is closed.
+
+===`xs:read([buf_size]) -> s`===
+
+Reads the next segment from a blob (or upto buf_size or blob's end for stream blobs). Calls `xs:open()` if the blob is not open. Returns `nil` on eof.
+{{{
+while true do
+  local s = st.columns.MEMO:read()
+  if not s then break end
+  io.write(s)
+end
+st.columns.MEMO:close()
+}}}
+
+===`xs:segments([buf_size = 65535]) -> iterator() -> s`===
+
+Returns an iterator for reading a blob one segment at a time (one full buffer at a time for stream blobs), from the current position. Calls `xs:open()` if the blob is not open.
+{{{
+for s in st.columns.MEMO:segments() do
+  io.write(s)
+end
+}}}
+
+===`xs:write(s, [max_segment_size = 65535])`===
+
+Write a string to a blob, segmenting it into `max_segment_size` segments (this has no effect on stream blobs). Calls `xs:create("stream")` if the blob is not open.
+{{{
+local file = io.open("messages.txt")
+for line in file:lines() do
+  st.params[1]:write(line)
+end
+file:close()
+}}}
+
+===`xs:getblobid() -> blob_id_buf`===
+===`xs:setblobid(blob_id_buf)`===
+
+Blob id getter/setter to work with the procedural blob API.
+
+==Getting information about a blob==
+
+===`xs:blobinfo(options_t,[info_buf_len]) -> blob_info_t`===
+===`xs:segmentlength() -> n`===
+===`xs:maxsegmentlength() -> n`===
+===`xs:maxsegmentcount() -> n`===
+===`xs:blobtype() -> "stream"|"segmented"`===
+
+==Working with bignums==
+
+Checkout BignumSupport.
+
+==Polymorphic getter and setter==
+
+===`xs:get() -> variant`===
+
+Calls an appropriate getter according to the type of the xsqlvar:
+
+|| *xsqlvar type*           || *getter called*      || *result datatype* ||
+|| _any_, NULL value        || `xs:isnull()`        || nil               ||
+|| date, time, timestamp    || `xs:gettime()`       || time_t            ||
+|| int16, int32, scale = 0  || `xs:getnumber()`     || number            ||
+|| int16, int32, scale > 0  || `xs:getparts()`      || parts_t           ||
+|| float, double            || `xs:getnumber()`     || number            ||
+|| varchar                  || `xs:getstring()`     || string            ||
+|| char                     || `xs:getunpadded()`   || string            ||
+|| int64, any scale `**`    || `xs:getldecnumber()` || decnumber number  ||
+|| int64, any scale `**`    || `xs:getmapm()`       || mapm number       ||
+|| int64, any scale `**`    || `xs:getbc()`         || bc number         ||
+|| blob `***`               || `xs:segments()`      || iterator() -> s   ||
+
+*Tip:* The value returned by `xs:get()` works with `tostring()` so you can print it directly. The only exception is the blob type for which an iterator is returned.
+
+===`xs:set(variant)`===
+
+Calls an appropriate setter depending on the argument type and the type of the xsqlvar:
+
+|| *xsqlvar type*                 || *arg. type*      || *setter called*      ||
+|| _any_                          || nil              || `xs:setnull()`       ||
+|| int16, int32, int64            || indexable        || `xs:setparts(t)`     ||
+|| float, double                  || number           || `xs:setnumber(n)`    ||
+|| int16, int32, int64, scale = 0 || number           || `xs:setnumber(n)`    ||
+|| int16, int32, int64, any scale || decnumber `**`   || `xs:setdecnumber(n)` ||
+|| int16, int32, int64, any scale || mapm number `**` || `xs:setmapm(n)`      ||
+|| int16, int32, int64, any scale || bc number `**`   || `xs:setbc(n)`        ||
+|| varchar                        || string           || `xs:setstring(s)`    ||
+|| char                           || string           || `xs:setpadded(s)`    ||
+|| blob `***`                     || string           || `xs:write(s)`        ||
+
+_*Note`**`:* For bignum support you must load the appropriate modules. More on BignumSupport._<br>
+_*Note`***`:* Blob support is not loaded automatically, so be sure to _`require "fbclient.blob"`_ first._
+
+==Column attributes==
+
+_Implementation in [http://code.google.com/p/fbclient/source/browse/lua/fbclient/xsqlda.lua xsqlda.lua]._
+
+===`xs.column_name`===
+===`xs.table_name`===
+===`xs.table_owner_name`===
+===`xs.column_alias_name`===
+
+Preparing a statement fills these attributes in the column xsqlvars (parameter xsqlvars don't have these obviously).
+
+==Module globals==
+{{{
+xsqlvar_class -> the table that xsqlvar objects inherit
+xsqlvar_meta -> the metatable of xsqlvar objects
+  __index = xsqlvar_class
+  __type = "fbclient.xsqlvar"
+time_meta -> the metatable of time_t objects representing times
+  __type = "fbclient.time"
+date_meta -> the metatable of time_t objects representing dates
+  __type = "fbclient.date"
+timestamp_meta -> the metatable of time_t objects representing timestamps
+  __type = "fbclient.timestamp"
+parts_meta -> the metatable of parts_t objects (for decimals)
+  __type = "fbclient.parts"
+}}}

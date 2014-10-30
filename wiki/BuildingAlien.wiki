@@ -1,0 +1,19 @@
+#summary tips on building the alien library
+<font size="3">
+Normally, you shouldn't need to build alien. Installing it with `luarocks install alien` should be enough. But if you want to build it for any reason, here's some tips.
+
+Alien builds best through !LuaRocks. Just grab the rockspec (either the [http://github.com/mascarenhas/alien/raw/master/rockspec/alien-0.5.0-1.rockspec latest release version] or the [http://github.com/mascarenhas/alien/raw/master/rockspec/alien-cvs-1.rockspec cvs version]), and issue `$luarocks build <alien-rockspec-full-pathname>`.
+
+Things are lil'harder for Windows users as usual:
+  * install Visual C++ (I got the 2008 VC++ Express Ed.)
+  * install the Windows Platform SDK for your platform (I got the one for XPSP2)
+  * install Git if you build from CVS
+  * open up a Visual Studio Command Prompt window
+  * goto !LuaRocks bin directory if you don't have the `luarocks` command on your PATH
+  * issue `luarocks build <alien-rockspec-full-pathname>`
+
+Alternatively, you can download/clone the sources manually and issue `luarocks make rockspec/alien-cvs-1.rockspec` from inside the top source directory.
+
+If everything goes ok, you should have alien built and installed into your local rocks repository.
+
+Don't forget to `require "luarocks.require"` in your scripts first, to have !LuaRocks find your modules. This is especially important if you also have LfW installed, which comes with its own older/unsupported version of alien. I got bitten by this so I'm telling you now.

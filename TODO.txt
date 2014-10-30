@@ -1,0 +1,25 @@
+
+- test everything on linux64
+	- lbc doesn't compile
+	- alien.struct is outdated
+
+- test error cases
+- add parameter validation
+
+- multithreaded tests:
+	- at:cancel_operation()
+	- trace API (decode trace)
+	- events API (add alien extension for async callbacks)
+
+- implement a shortcut for getting the values out of a singleton select
+
+- finish schema.lua
+	- test load everything
+	- add create/alter/drop ddl commands
+	- add priority order on create (reverse for drop)
+	- add schema:create_all(), schema:drop_all()
+	- add schema:export_differences([old_schema],[params...]) -> sql statement list with param values
+
+- finish bignum.lua and add decimal_bignum.lua
+- finish lgmp.lua and add decimal_lgmp.lua
+

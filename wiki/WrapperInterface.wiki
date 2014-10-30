@@ -1,0 +1,245 @@
+#summary module fbclient.wrapper, the procedural interface of fbclient
+<font size="3">
+
+_Implementation in [http://code.google.com/p/fbclient/source/browse/lua/fbclient/wrapper.lua wrapper.lua]. Test unit in [http://code.google.com/p/fbclient/source/browse/unit-tests/test_wrapper.lua test_wrapper.lua]._
+
+<wiki:toc max_depth="2" />
+
+=1. Load the module=
+
+===`require 'fbclient.wrapper'`===
+{{{
+local api = require 'fbclient.wrapper'
+}}}
+The module registers itself via the global `module()` function, so getting a reference to it on `require()` is optional. All functions take a `binding` object as their first argument and a `status_vector` object as their second argument, so let's grab some. They are also needed for ErrorHandling.
+{{{
+require 'fbclient.binding'
+require 'fbclient.status_vector'
+
+local sv = fbclient.status_vector.new()
+local fbapi = fbclient.binding.new('fbclient') -- alternatively, pass the full pathname of the fbclient shared library
+}}}
+
+=2. Connections=
+
+==2.1 Connecting to a database==
+
+===`db_attach(binding, status_vector, database, [dpb_options_t]) -> database_handle`===
+
+Connect to a database and get an attachment handle. The `database` parameter is a [http://www.firebirdsql.org/manual/qsg2-databases.html connection string]. `dpb_options_t` is a table abstracting a DPB (Database Parameter Block or Buffer). See [http://code.google.com/p/fbclient/source/browse/lua/fbclient/dpb.lua dpb.lua] for the complete range of options, their argument types, and what they mean.
+{{{
+local dbh = api.db_attach(fbapi, sv, 'localhost/3050:/your/database.fdb', {
+  isc_dpb_user_name = 'SYSDBA',
+  isc_dpb_password = 'masterkey',
+})
+}}}
+
+==2.2 Disconnecting from the database==
+
+===`db_detach(binding, status_vector, database_handle)`===
+{{{
+api.db_detatch(fbapi, sv, dbh)
+}}}
+
+==2.3 Getting database version==
+
+===`db_version(binding, database_handle) -> info_t`===
+{{{
+print(table.concat(api.db_version(fbapi, dbh), '\n'))
+}}}
+
+=2. Transactions=
+
+==2.1. Start a transaction, #1 variant==
+
+===`tr_start(binding, status_vector, database_handle, [tpb_options_t]) -> transaction_handle`===
+
+Start a transaction over a single attachment, optionally configured via `tpb_options_t` which abstracts a Transaction Parameter Block (TPB).
+{{{
+local opts = {
+  isc_tpb_read_committed = true,
+  isc_tpb_nowait = true,
+}
+local trh = api.tr_start(fbapi, sv, dbh, opts)
+}}}
+
+===Transaction options===
+
+Transaction options are keys in the `tpb_options_t` table:
+
+  * access mode: either
+    * `isc_tpb_read = true`, or
+    * `isc_tpb_write = true` (default)
+  * isolation level, either:
+    * `isc_tpb_consistency = true`, or
+    * `isc_tpb_concurrency = true` (default), or
+    * `isc_tpb_read_committed = true`, `isc_tpb_rec_version = true`, or
+    * `isc_tpb_read_committed = true`, `isc_tpb_no_rec_version = true`
+  * deadlock resolution, either:
+    * `isc_tpb_wait = true` (default), and optionally `isc_tpb_lock_timeout = n_seconds`, or
+    * `isc_tpb_nowait = true`
+
+For the full list of TPB options see [http://code.google.com/p/fbclient/source/browse/lua/fbclient/tpb.lua tpb.lua]. When no TPB is given, the default `{isc_tpb_write = true, isc_tpb_concurrency = true, isc_tpb_wait = true}` is assumed by Firebird. `isc_tpb_lock_timeout = 0` means wait indefinitely.
+
+===Table reservation options===
+
+Table reservation options occupy the array part of `tpb_options_t`, one numerical index for each table that you want to reserve. The format for reserving a table is
+
+  `{table_reservation_mode_code, table_reservation_lock_code, table_name}`, where
+
+the mode code is one of `'isc_tpb_shared', 'isc_tpb_protected', 'isc_tpb_exclusive'`, and the lock code is either `'isc_tpb_lock_read' or 'isc_tpb_lock_write'`. Example:
+{{{
+  tpb_options_t = {
+    {'isc_tpb_shared','isc_tpb_lock_read','SOME_TABLE'},
+    {'isc_tpb_exclusive','isc_tpb_lock_write','SOME_OTHER_TABLE'},
+    ...
+  }
+}}}
+
+==2.2. Start a transaction, #2 variant==
+
+===`tr_start_sql(binding, status_vector, database_handle, set_transaction_query, dialect) -> transaction_handle`===
+
+Start a transaction over a single attachment, configured via `SET TRANSACTION` DSQL statement (syntax [http://www.ibphoenix.com/main.nfs?a=ibphoenix&page=ibp_60_sqlref#RSf96788 here]).
+{{{
+local trh = api.tr_start(fbapi, sv, dbh, 'SET TRANSACTION ISOLATION LEVEL READ COMMITED NO WAIT', 3)
+}}}
+
+==2.3. Start a transaction, #3 variant==
+
+===`tr_start_multiple(binding, status_vector, tpb_multi_options_t) -> transaction_handle`===
+
+Start a transaction spanning multiple attachments configured via the `tpb_multi_options_t` table, which has the form `{[database_handle] = tpb_options_t|true,...}`.
+
+{{{
+local opts2 = {
+  isc_tpb_consistency = true,
+  isc_tpb_wait = true,
+  isc_tpb_lock_timeout = 10,
+}
+local trh = api.tr_start_multiple(fbapi, sv, {[dbh1] = true, [dbh2] = opts2})
+}}}
+
+==2.4. End a transaction==
+
+===`tr_commit(binding, status_vector, transaction_handle)`===
+===`tr_rollback(binding, status_vector, transaction_handle)`===
+===`tr_commit_retaining(binding, status_vector, transaction_handle)`===
+===`tr_rollback_retaining(binding, status_vector, transaction_handle)`===
+
+The difference between commit and commit_retaining is that the first closes the transaction and destroys the transaction handle, while the later closes the transaction and starts a new one with the same parameters and the same transaction handle so you can continue executing queries against it. It also doesn't close the fetch cursor if open.
+{{{
+api.tr_commit(fbapi, sv, trh)
+}}}
+
+=3. Statements=
+
+==3.1. Prepare and execute a statement==
+
+===`dsql_alloc_statement(binding, status_vector, database_handle) -> statement_handle`===
+===`dsql_prepare(binding, status_vector, transaction_handle, statement_handle, query, dialect) -> params_t, columns_t`===
+===`dsql_execute(binding, status_vector, transaction_handle, statement_handle, params_t)`===
+===`dsql_fetch(binding, status_vector, statement_handle, columns_t) -> ok?`===
+... fetch more rows ...
+... execute the statement again with different parameters and fetch the results ...
+===`dsql_unprepare(binding, status_vector, statement_handle)`===
+... prepare another statement again on the same statement_handle ...
+===`dsql_free_statement(binding, status_vector, statement_handle)`===
+
+Preparing and executing a statement and fetching the results is a multi-step process, so that you can prepare a query on the server once and execute it multiple times with different parameters, fetching the result one row at a time after each execution. 
+
+_Note:_ `dsql_unprepare()` is only available in firebird 2.5+. You don't have to call `dsql_unprepare()` if you don't want to reuse the statement handle for another query.
+
+Parameter substitution is done by placing the `?` sign in the places where parameter values should be in the query, and then setting the values via the `params_t` object. This functionality is provided by Firebird, not the wrapper.
+
+The `params_t` and `columns_t` tables are arrays of `xsqlvar` objects: `params_t` is for setting up parameter values before executing the query, while `columns_t` is for retrieving column values after fetching a row from the result set. See DatatypeMapping for a complete list of methods to use on `xsqlvar` objects for each SQL data type.
+
+{{{
+local dialect = 3
+local query = 'select * from rdb$types where rdb$field_type = ?'
+
+local sth = api.dsql_alloc_statement(fbapi, sv, dbh)
+local params, columns = api.dsql_prepare(fbapi, sv, trh, sth, query, dialect)
+params[1]:setstring('RDB$FIELD_TYPE')
+api.dsql_execute(fbapi, sv, trh, sth, params)
+while api.dsql_fetch(fbapi, sv, sth, columns) do
+  print(columns[1]:tostring(), columns[2]:tonumber(), columns[3]:tostring())
+end
+api.dsql_free_statement(fbapi, sv, sth)
+}}}
+
+==3.2. Statements returning only one row==
+
+===`dsql_execute_returning(binding, status_vector, transaction_handle, statement_handle, params_t, columns_t)`===
+
+The statements `INSERT ... RETURNING` and `EXECUTE PROCEDURE` don't open a cursor. For those you need to use `dsql_execute_returning()` instead of `dsql_execute()` / `dsql_fetch()` combination.
+
+
+==3.3. Named cursors==
+
+===`dsql_set_cursor_name(binding, status_vector, statement_handle, cursor_name)`===
+===`dsql_free_cursor(binding, status_vector, statement_handle)`===
+
+To use `UPDATE ... WHERE CURRENT OF <cursor_name>` you need to set the cursor name on the selecting query (after you execute the statement), and free it after fetching all the rows to update.
+
+=4. The Info API=
+
+==4.1. Request information about an attachment==
+
+===`db_info(binding, status_vector, database_handle, options_t, [info_buf_len]) -> db_info_t`===
+
+For the full list of options that you can pass in `options_t`, see [http://code.google.com/p/fbclient/source/browse/lua/fbclient/db_info.lua db_info.lua].
+{{{
+local info = api.db_info(fbapi, sv, dbh, { ... })
+print(info....)
+}}}
+
+==4.2 Request information about a transaction==
+
+===`api.tr_info(binding, status_vector, transaction_handle, options_t, [info_buf_len]) -> tr_info_t`===
+
+For the full list of options that you can pass in `options_t`, see [http://code.google.com/p/fbclient/source/browse/lua/fbclient/tr_info.lua tr_info.lua].
+
+{{{
+local info = api.tr_info(fbapi, sv, trh, { ... })
+print(info....)
+}}}
+
+==4.3 Request information about a prepared statement==
+
+===`api.sql_info(binding, status_vector, statement_handle, options_t, [info_buf_len]) -> db_info_t`===
+
+For the full list of options that you can pass in `options_t`, see [http://code.google.com/p/fbclient/source/browse/lua/fbclient/sql_info.lua sql_info.lua].
+
+{{{
+local info = api.sql_info(fbapi, sv, sth, { ... })
+print(info....)
+}}}
+
+=5. Cancel a running query (firebird 2.5+)=
+
+===`api.db_cancel_operation(binding, status_vector, database_handle, [fb_cancel_option])`===
+
+Cancel the operation currently running on a database attachment. Obviously you have to call this from a separate thread, since all operations are synchronous and therefore blocking. Also, don't call it from the main thread or any thread that handles signals. This function is non-blocking and it doesn't wait for confirmation of the cancel operation from the server before returning. Read the Firebird 2.5 Release Notes about `fb_cancel_operation()` for more info.
+{{{
+api.db_cancel_operation(fbapi, sv, dbh)
+}}}
+
+=6. Get the Interbase compatibility version of the client library=
+
+===`ib_version(fbapi) -> minor,major`===
+{{{
+print(string.format('Interbase compatibility version: %d.%d', api.library_version(fbapi)))
+}}}
+
+=7. Error handling=
+
+All functions that take a `status_vector` object as argument break on errors with a full error message. To handle errors specifically, you have to protect the calls and then inspect the status_vector with ErrorHandling functions.
+
+=8. Multi-threaded usage=
+
+The multi-threading problem reduces to what state objects you are allowed to share between running threads, as the function calls themselves are thread-safe in fbclient from v2.5 on. As long as you don't share connections and status vector objects between threads you should be fine.
+
+=9. Further reading=
+
+A terse but complete description of the API plus more usage notes is in the [http://code.google.com/p/fbclient/source/browse/lua/fbclient/wrapper.lua source code]. More usage examples although not didactically composed are in the [http://code.google.com/p/fbclient/source/browse/unit-tests/test_wrapper.lua test unit].

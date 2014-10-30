@@ -1,0 +1,8 @@
+^unit-tests/win32$
+^unit-tests/linux32$
+^unit-tests/linux64$
+^unit-tests/fbclient-unit-tests-win32.zip$
+^unit-tests/fbclient-unit-tests-win64.zip$
+^unit-tests/fbclient-unit-tests-linux32.tar.gz$
+^unit-tests/fbclient-unit-tests-linux64.tar.gz$
+^resources$

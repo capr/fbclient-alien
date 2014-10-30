@@ -1,0 +1,25 @@
+#summary my own personal collection
+<font size="3">
+
+No powerful system comes without its own set of warts, and knowing its weaknesses is as important as knowing its strengths.
+
+==Things that may surprise you==
+  * there's a poorly explained 64K limit on row size. This limit affects the maximum combined size of table columns, view columns, index columns and can even show up at runtime with some selects. What's worse is that an utf-8 varchar (a popular choice these days) eats up on this limit four-fold, so a table/index/view can only hold at most 4 utf-8 varchar(4096) columns (4*4*4k = 64k). Using data type domains with fine-tuned sizes can help a great deal with this limitation. Blobs can be of any size.
+  * inside a `FOR SELECT` loop, changing the underlying tables of the select results in undefined behavior, something called asensitive cursors in SQL terminology, as Dmitry Yemanov [http://tech.groups.yahoo.com/group/firebird-support/message/100126 points out]. In absence of local temporary tables (Firebird supports only global temporary tables), this can turn simple update patterns into hack fests. Named cursors work for the most simple selects but that's it.
+  * output parameters marked `NOT NULL` must be initialized with a non-null value before any attempt at _reading_ them ([http://tracker.firebirdsql.org/browse/CORE-2335 more]).
+  * `NOT NULL` constraint handling is a mess, [http://www.firebirdsql.org/manual/nullguide-alter-pop-tables.html read] and be amazed. The obvious solution (never allow data to evade constraints) would spare us the long explanation and a gbak switch.
+
+==Upcoming features==
+  * there's no selecting from multiple servers in the same query yet, a killer feature that would leverage the SQL language for complex data transfer operations in heterogeneous environments. Joining multiple external data sources in one query is scheduled for implementation in Firebird 3.0.
+  * writing stored procedures and triggers in foreign languages like Java is not yet supported, although a general plugin interface for embedding external languages is in the works and will be available in Firebird 3.0. Adriano dos Santos Fernandes already published a [http://www.firebirdsql.org/index.php?op=devel&sub=plugins&id=external_java test version] of a Java plugin that leverages this interface. My plans are to make a Lua binding when the interface will be released.
+
+==Things with 3rd party solutions==
+  * no built-in synchronous replication, you have to rely on [http://www.firebirdfaq.org/faq249/ third-party tools] for that. Replication is a tough nut for any RDBMS.
+  * no built-in full-text search engine, but many [http://www.firebirdfaq.org/faq328/ solutions] are available.
+  * no way to write functions and aggregate functions in PSQL yet, but you can write binary UDFs and register them with Firebird. You can also write UDFs in Lua with a little [http://code.google.com/p/firebird-lua-udfs/ helper library] I wrote, or in [http://code.google.com/p/firebird-fpc-udfs/ free pascal]. Unfortunately, vararg UDFs are not supported. Writing functions in PSQL (and other languages) is planned for 3.0.
+
+==Documentation==
+Firebird still has no single, structured, online reference manual (and contributing documentation is not as easy as it should be), which is not to say that the documentation is lacking, far from it, but you have to get used to using multiple reference material to get an in-depth look on a subject. The bulk of the documentation is in the excellent Interbase 6 manuals (the Firebird project started from there many years ago). Supplement that with the Firebird Langref Updates, Release Notes, and the FAQ. To get started, try the Quick Start Guide.
+
+==My personal wishlist for Firebird==
+  * move the entire firebirdsql.org including the documentation project to a single wiki-based service promoting openness and collaboration.

@@ -1,0 +1,16 @@
+#summary module fbclient.status_vector, the error handling API
+<font size="3">
+
+Calls in fbclient are not protected: errors propagate to the caller in the form of exceptions. To get more info about an error, use the status vector and the binding (fbapi) object used to make the call with the following functions:
+
+===`status(status_vector) -> true|nil, errcode`===
+===`full_status(fbapi, status_vector) -> true|nil, full_error_message`===
+===`errors(fbapi, status_vector) -> {error_message1,...}`===
+===`sqlcode(fbapi, status_vector) -> sql_code_number (**)`===
+===`sqlstate(fbapi, status_vector) -> sqlstate_code (***)`===
+===`sqlerror(fbapi, sqlcode) -> sql_error_message`===
+
+*Note`**`*: Deprecated in Firebird in favor of `sqlstate()`<br>
+*Note`***`*: SQL-2003 compliant SQLSTATE code. Firebird 2.5+.
+
+A terse but complete description of the error handling API + usage notes is in the [http://code.google.com/p/fbclient/source/browse/lua/fbclient/status_vector.lua status_vector.lua].

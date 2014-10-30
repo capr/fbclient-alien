@@ -1,0 +1,19 @@
+#summary Firebird and Lua propaganda
+<font size="3">
+
+Firebird and Lua may seem like a strange combination, though they share many characteristics that make them suitable for a variety of usage scenarios and environments: small footprint, embedded and client-server usage, simple yet powerful programming language, liberal license, and so on.
+
+==Why choose Firebird==
+If you're fresh on Firebird, there was never a better time to start learning and using it in your most serious projects. Firebird is no joke, despite its lame [http://firebirdsql.com website]. In case you didn't know, Firebird has MVCC concurrency, column-level character sets and collations, Unicode, updatable views, triggers and selectable stored procedures you can write in the most elegant procedural language, multi-database transactions, global temporary tables, common table expressions, asynchronous events, computed-by columns, check and foreign key constraints, datatype domains, online backup and restore that you can even start remotely, UDFs, full SQL 92 compliance, the list goes on and on. You can choose between two server implementations, a multi-threaded one and a multi-process one ([http://www.firebirdsql.org/manual/qsg2-classic-or-super.html compare]), and there's also an embedded build that gives you all the features in a 3.5 MB shared library (7 MB including dependencies on Windows). There are pre-built packages for 32bit and 64bit platforms, Windows, Linux, Mac, BSD, etc.
+
+And if that's not enough, Firebird enjoys a kick-ass designer tool called [http://ibexpert.net/ibe/ IBExpert], which is a real killer and always up-to-date with the latest Firebird developments (but buried under another lame website). They also have a free personal edition version you can download with a bit of registration effort. This piece will get you going on Firebird really fast, and will also make you sigh there's no Oracle or MSSQL Server equivalent out there, which is probably what you are forced to use at your daily job. And if commercial isn't your game, there's an open-source, cross-platform alternative called [http://www.flamerobin.org/ FlameRobin].
+
+For those of you who _did_ tried Interbase or Firebird a long time ago and gave up on it, you should know that Firebird changed _a lot_ in the last few years and most of its warts and limitations are gone by now, all thanks to the good folks that kept the project going all this time (cheers!). To be completely honest, there are still some FirebirdWarts as with any RDBMS out there or any complex tool for that matter, but nothing serious really.
+
+==Why choose Lua== 
+Why choose a dynamic programming language that's easy as pseudocode to write and to read (the downside being that you don't feel even half as smart as when you program in C++), has one of the fastest interpreters and JIT-compilers out there, the interpreter binary weights about 200K, and you can bind a shared library without having to write one line of C. Why indeed.
+
+PS: I'm aware that the choice of a programming language is too personal for such monkey talk to work on anyone. For me it was hardly a choice at all: I am forever sold to conceptual liberation of which Lua has aplenty. And I was sick of curly braces and semicolons.
+
+==Why a pure Lua binding==
+A pure Lua binding results in small and transparent code base, lowering lock-in and ensuring fast synchronization to the latest Firebird developments. It is the main reason for writing this in the first place.

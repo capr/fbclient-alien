@@ -1,0 +1,4 @@
+#summary module fbclient.class, usage examples
+<font size="3">
+
+soon to come... (or maybe _you_ wanna help)

@@ -1,0 +1,413 @@
+#summary module fbclient.class, the objectual interface of fbclient
+#labels Featured
+<font size="3">
+_Implementation in [http://code.google.com/p/fbclient/source/browse/lua/fbclient/class.lua class.lua]. Test unit in [http://code.google.com/p/fbclient/source/browse/unit-tests/test_class.lua test_class.lua]._
+
+<wiki:toc max_depth="2" />
+
+=1. Load the module=
+
+===`require 'fbclient.class'`===
+{{{
+local fb = require 'fbclient.class'
+}}}
+
+The module registers itself via the global `module()` function.
+
+=2. Connections=
+
+==2.1. Connect to an existing database==
+
+===`attach(database, [username], [password], [client_charset], [role_name], [dpb_options_t], [binding | libname = 'fbclient'], [at_class]) -> attachment`===
+
+Connect to a database using a username and password. Returns an attachment object. The `database` parameter is a [http://www.firebirdsql.org/manual/qsg2-databases.html connection string], which has the form `<hostname>:<database_file_or_alias>` for a typical TCP/IP-based remote connection. Unlike mysql, you can't change the database of an established connection.
+{{{
+at = fb.attach('localhost:/my/db.fdb', 'SYSDBA', 'masterkey', 'ASCII')
+}}}
+
+===`attach_ex(database, [dpb_options_t], [binding | libname = 'fbclient'], [at_class]) -> attachment`===
+
+Connect to a database using a Database Parameter Block (DPB).
+{{{
+at = fb.attach_ex('localhost:/my/db.fdb', {
+  isc_dpb_username = 'SYSDBA',
+  isc_dpb_password = 'masterkey',
+  isc_dpb_lc_ctype = 'UTF8'
+}, 'fbclient.dll')
+}}}
+The full list of DPB codes is in  [http://code.google.com/p/fbclient/source/browse/lua/fbclient/dpb.lua dpb.lua].
+
+==2.2. Create a database==
+
+===`create_database(database, [username], [password], [client_charset], [role_name], [db_charset], [page_size], [dpb_options_t], [binding | libname = 'fbclient'], [at_class]) -> attachment`===
+
+Create a database and connect to it, returning an attachment object.
+
+==2.3 Create a database via SQL==
+
+===`create_database_sql(create_database_sql, [binding | libname = 'fbclient'], [at_class]) -> attachment`===
+
+Create a database via `CREATE DATABASE` SQL command ([http://www.ibphoenix.com/main.nfs?a=ibphoenix&page=ibp_60_sqlref#RSf21487 syntax]).
+
+==2.4 Create a database via TPB==
+
+===`create_database_ex(database, [dpb_options_t], [binding | libname = 'fbclient'], [at_class]) -> attachment`===
+
+Create a database using a DPB. Note that some DPB options are exclusively for creating databases, others are only for connecting to existing databases, and others work with both operations.
+
+==2.5. Clone a connection==
+
+===`at:clone()`===
+
+Start a new connection using the same parameters and fbclient binding object as `at`. Connections made with `create_database*()` can't be cloned. Useful for multi-threaded applications.
+
+==2.6. Disconnect from a database==
+
+===`at:close()`===
+
+Closes a database attachment. Closing an attachment rolls back any active transactions on that attachment, so committing must be explicit. To check whether the attachment is already closed use `at:closed()`.
+
+==2.7. Drop a database==
+
+===`at:drop_database()`===
+
+Closes an attachment and drops the database from the server.
+
+=3. Transactions=
+
+==3.1. Start a transaction==
+
+===`at:start_transaction([access], [isolation], [lock_timeout], [tpb_options_t], [tr_class]) -> transaction`===
+
+Start a transaction on an attachment, with optional parameters.
+
+===Transaction options===
+
+ * `access`: "read" | "write"; if not set, Firebird assumes "write"
+ * `isolation`: "read commited" | "concurrency" | "consistency" | "read commited, no record version"; if not set, Firebird assumes "concurrency"
+ * `lock_timeout`: number of seconds to wait until reporting a conflicting update; 0 causes no delay; nil (default) means as per server configuration
+ * `tpb_options_t`: other TPB options you want to set (see below)
+
+{{{
+tr = at:start_transaction('write', 'consistency', 5)
+}}}
+
+==3.2. Start a transaction via TPB==
+
+===`at:start_transaction_ex([tpb_options_t], [tr_class]) -> transaction`===
+
+Start a transaction on an attachment, optionally specifying a Transaction Parameter Block (TPB).
+{{{
+tr = at:start_transaction_ex{isc_tpb_read = true}
+}}}
+
+===TPB options===
+
+You can setup the way the transaction behaves by specifying in the `tpb_options_t` table:
+  * the access mode: either
+    * `isc_tpb_read = true`, or
+    * `isc_tpb_write = true`
+  * the isolation level, either:
+    * `isc_tpb_consistency = true`, or
+    * `isc_tpb_concurrency = true`, or
+    * `isc_tpb_read_committed = true`, `isc_tpb_rec_version = true`, or
+    * `isc_tpb_read_committed = true`, `isc_tpb_no_rec_version = true`
+  * deadlock resolution, either:
+    * `isc_tpb_wait = true`, and optionally `isc_tpb_lock_timeout = n_seconds`, or
+    * `isc_tpb_nowait = true`
+
+The full list of TPB codes is in [http://code.google.com/p/fbclient/source/browse/lua/fbclient/tpb.lua tpb.lua]. When no TPB is specified, the default `{isc_tpb_write = true, isc_tpb_concurrency = true, isc_tpb_wait = true}` is assumed by Firebird.
+
+===Table reservation options===
+Table reservation options occupy the array part of the TPB, one numerical index for each table that you want to reserve. The format for reserving a table is
+
+  `{table_reservation_mode_code, table_reservation_lock_code, table_name}`, where
+
+the mode code is one of `'isc_tpb_shared', 'isc_tpb_protected', 'isc_tpb_exclusive'`, and the lock code is either `'isc_tpb_lock_read' or 'isc_tpb_lock_write'`. Example:
+{{{
+  tpb_options_t = {{'isc_tpb_shared','isc_tpb_lock_read','MYTABLE'},other options...}
+}}}
+
+==3.3. Start a transaction via SQL==
+
+===`at:start_transaction_sql(set_transaction_sql, [tr_class]) -> transaction`===
+
+Start a transaction on a single attachment, setting it's parameters via `SET TRANSACTION` SQL command ([http://www.ibphoenix.com/main.nfs?a=ibphoenix&page=ibp_60_sqlref#RSf96788 syntax]).
+
+{{{
+tr = at:start_transaction_sql 'SET TRANSACTION READ ONLY'
+}}}
+
+==3.4. Start a multi-database transaction==
+
+===`start_transaction_ex({[attachment1]={tbp_options_t} | true], ...}, [tr_class]) -> transaction`===
+
+Start a transaction spanning one or more attachments, optionally specifying a TPB for each of them.
+{{{
+tr = fb.start_transaction_ex{[at1] = true, [at2] = {isc_tpb_read_only = true}}
+}}}
+
+All attachments involved in a multi-database transaction should run on the same OS thread. It's otherwise safe to run different attachments on different threads, but never run the same attachment on two threads.
+
+==3.5. End a transaction==
+
+===`tr:commit()`===
+===`tr:rollback()`===
+===`tr:commit_retaining()`===
+===`tr:rollback_retaining()`===
+
+The difference between commit and commit_retaining is that the first closes the transaction and destroys the transaction handle, while the later closes the transaction and starts a new one with the same parameters and the same transaction handle so you can continue executing queries against it. It also saves the cursor, so you don't have to re-fetch any data.
+
+===`at:commit_all()`===
+===`at:rollback_all()`===
+
+End all transactions on a certain attachment (doesn't matter if they span other attachments too, they are ended nevertheless).
+
+You can test whether a transaction is already closed with `tr:closed()`.
+
+=4. SQL statements=
+
+==4.1. Execute SQL statements the easy way==
+
+===`at:exec(sql, param1_val, param2_val, ...) -> row_iterator() -> statement, col1_val, col2_val, ...`===
+
+Execute a statement in a new hidden transaction over attachment `at`, returning an iterator for fetching the results. Parameter and column values are subject to DatatypeMapping.  
+{{{
+local sql = 'select id, name from inventions where inventor in (?, ?)'
+for st, id, name in at:exec(sql, 'Farnsworth', 'Wornstrom') do
+  print(id, name)
+end
+}}}
+The transaction is committed after the last row is fetched, which means that breaking the iteration will leave you with an active transaction and statement object which will both stay open until closing the attachment. To prevent that:
+{{{
+local free_st
+pcall(function()
+  local sql = 'select id, name from inventions where inventor in (?, ?)'
+  for st, id, name in at:exec(sql, 'Farnsworth', 'Wornstrom') 
+  do
+    free_st = st
+    ...code that might break the iteration...
+  end
+end)
+if not free_st.transaction:closed() then
+  free_st.transaction:rollback()
+end
+}}}
+Alternatively, you can clean up with `at:rollback_all()` if you don't have other active transactions on the attachment.
+
+===`tr:exec(sql, param1_val, param2_val, ...) -> row_iterator() -> statement, col1_val, col2_val, ...`===
+===`tr:exec_on(attachment, sql, param1_val, param2_val, ...) -> row_iterator() -> statement, col1_val, col2_val, ...`===
+
+Execute a statement in the context of transaction `tr`, returning an iterator for fetching the results. The second variant is for multi-database transactions. Parameter and column values are subject to DatatypeMapping.
+{{{
+local sql = 'select id, inventor from inventions where name = ? or name = ?'
+for st, id, inventor in tr:exec(sql, 'Probulator', 'Smelloscope') do
+  print(id, inventor)
+end
+}}}
+The statement object is closed after the last row is fetched, so breaking the iteration will leave you with an active statement object that will stay open until the transaction is committed or rolled back. To prevent that:
+{{{
+local free_st
+pcall(function()
+  local sql = 'select id, inventor from inventions where name = ? or name = ?'
+  for st, id, inventor in tr:exec(sql, 'Probulator', 'Smelloscope') do
+    free_st = st
+    ...code that might break the iteration...
+  end
+end)
+if not free_st:closed() then
+  free_st:close()
+end
+}}}
+Alternatively, you can clean up with `tr:close_all_statements()` if you don't have other open statements on the transaction.
+
+==4.2. Execute immediate==
+
+===`at:exec_immediate(sql)`===
+===`tr:exec_immediate(sql)`===
+===`tr:exec_immediate_on(attachment, sql)`===
+
+Just a faster (fewer server calls) way to execute statements that take no parameters and return no result set (usually DDL statements). The last variant is for multi-database transactions.
+
+==4.3. Prepared statements==
+
+===`tr:prepare(sql, [st_class]) -> statement`===
+===`tr:prepare_on(attachment, sql, [st_class]) -> statement`===
+
+Prepare an SQL statement and return a statement object for executing the statement and fetching the results. The second variant is for multi-database transactions.
+
+Preparing statements is good for efficiently executing the same query multiple times, each time with different parameters. Parameters are initialized to `nil` and can be set either individually via `st.params[i]:set*()` family of methods, or all at once with `st:setparams()`. The statement can then be executed with `st:run()`. Result rows can then be fetched one by one with `st:fetch()` and the row values can be read either individually via `st.columns[i|name]:get*()` family of methods, or all at once with `st:values()` or `st:row()`. The statement can then be executed again with new parameters. Alternatively, you can use the more concise `st:exec()` which encapsulates all this workflow:
+
+===`st:exec([param1_val, param2_val, ...]) -> row_iterator() -> row_num, col1_val, col2_val, ...`===
+
+Execute a prepared statement with a new set of parameters. Parameter and column values are subject to DatatypeMapping.
+{{{
+st = tr:prepare('select id, name from inventions where inventor = ?')
+for _,inventor in ipairs{'Farnsworth', 'Wornstrom'} do
+  print('Inventions of Prof. '..inventor)
+  for _, id, name in st:exec(inventor) do
+    print(id, name)
+  end
+end
+}}}
+
+===`st:setparams([param1_val, param2_val, ...])`===
+
+Set all statement parameters at once. Parameter values are subject to DatatypeMapping. Equivalent to calling the polymorphic `st.params[i]:set(param_val)` for each and all parameters.
+
+===`st:run()`===
+
+Run a prepared statement, eventually after (re)setting any parameters.
+
+===`st:fetch() -> ok?`===
+
+Fetch another row from the result set of an executed statement. Returns true if there are even more rows to fetch, and false otherwise.
+
+===`st:values([col1_num | col1_name,...]) -> col1_val, col2_val, ...`===
+
+Retrieve some or all column values of the currently fetched row at once. Values are subject to DatatypeMapping.
+
+===`st.values[col_num | col_name] -> column_val`===
+
+Retrieve the value of a specific column of the currently fetched row. Values are subject to DatatypeMapping. Equivalent to calling the polymorphic `st.columns[col_num | col_name]:get()`.
+
+Note that `values` is just a (indexable and callable) proxy table.
+
+===`st:row() -> {col1_name = col1_value,...}`===
+
+Get all the values of the currently fetched row in an accessible form.
+
+===`st.params[param_num] -> xsqlvar`===
+===`st.columns[col_num | col_name] -> xsqlvar`===
+
+Retrieve the value buffer object (called _xsqlvar_) of a parameter or column value. All setting of query parameters and retrieving of column values ultimately goes through the various getter and setter methods of this object, as described in DatatypeMapping. The rest is sugar.
+{{{
+st = tr:prepare('select id, inventor from inventions where id = ? and name like ?')
+st.params[1]:setnumber(5)
+st.params[2]:setstring('%Detector%')
+st:run()
+while st:fetch() do
+  print(st.columns.ID:getnumber(), st.columns.INVENTOR:getstring())
+  print(st.columns.ID:get(), st.columns.INVENTOR:get())
+  print(st.values.ID, st.values.INVENTOR)
+  print(st:values('ID', 'INVENTOR'))
+  print(st:values())
+  local row = st:row()
+  print(row.ID, row.INVENTOR)
+end
+st:close()
+}}}
+
+==4.4. Release the statement resource==
+
+===`st:close()`===
+
+Closes a statement object freeing any associated resources, including closing any open blob handles. Use `st:closed()` to check if a statement is closed.
+
+If you use Firebird 2.5+, you can reuse statements for future `tr:prepare()` calls. Just set the key `statement_handle_pool_limit` on an attachment object to the maximum number of handles to be kept for reuse. Each attachment has its own pool of statement handles.
+
+===`tr:close_all_statements()`===
+===`at:close_all_statements()`===
+
+Close all statements tied to a transaction or attachment. Statements are also closed when closing transactions and attachments.
+
+==4.5. Parameter substitution==
+
+Parameter substitution is done by placing the `?` sign in the places where parameter values should be in the query, and then setting the corresponding parameter values. This is a Firebird functionality, fbclient does no attempt to parse the SQL string.
+
+=5. The Info API=
+
+==5.1. Get info about an attachment==
+
+===`at:database_version() -> {line1,...}`===
+
+Retrieve database and server version into an array of strings.
+
+===`at:info(options_t, [info_buf_len]) -> db_info_t`===
+
+Retrieve selected info about a running attachment. For `options_t` consult [http://code.google.com/p/fbclient/source/browse/lua/fbclient/db_info.lua db_info.lua].
+
+===`at:id() -> n`===
+===`at:page_counts() -> {reads=n,writes=n,fetches=n,marks=n}`===
+===`at:server_version() -> s`===
+===`at:page_size() -> n`===
+===`at:page_count() -> n`===
+===`at:buffer_count() -> n`===
+===`at:memory() -> n`===
+===`at:max_memory() -> n`===
+===`at:sweep_interval() -> n`===
+===`at:no_reserve() -> n`===
+===`at:ods_version() -> {maj,min}`===
+===`at:forced_writes() -> true|false`===
+===`at:connected_users() -> {username1,...}`===
+===`at:read_only() -> true|false`===
+===`at:creation_date() -> time_t`===
+===`at:page_contents(page_number) -> s`===
+===`at:table_counts() -> {[table_id]={read_seq_count=n,read_idx_count=n,...}}`===
+
+These are just one line wrappers of `at:info()`. Hope they're self-explanatory.
+For `at:page_contents()` you need Firebird 2.5+ and you have to connect as `SYSDBA`.
+
+==5.2. Get info about a transaction==
+
+===`tr:info(options_t, [info_buf_len]) -> tr_info_t`===
+
+Retrieve selected info about an active transaction. For `options_t` consult [http://code.google.com/p/fbclient/source/browse/lua/fbclient/tr_info.lua tr_info.lua].
+
+===`tr:id() -> n`===
+
+A one line wrapper of `tr:info()` returning the transaction id.
+
+==5.3. Get info about a statement==
+
+===`st:info(options_t, [info_buf_len]) -> st_info_t`===
+
+Retrieve selected info about a prepared (and/or executed) statement. For `options_t` consult [http://code.google.com/p/fbclient/source/browse/lua/fbclient/sql_info.lua sql_info.lua].
+
+===`st:type() -> type_s`===
+===`st:plan() -> plan_s`===
+===`st:affected_rows() -> {selected=,inserted=,updated=,deleted=}`===
+
+These are just one line wrappers of `st:info()`. Hope they're self-explanatory. Obviously `st:affected_rows()` only works on an executed statement.
+
+=6. Cancel a running statement=
+
+===`at:cancel_operation(cancel_opt_s = 'fb_cancel_raise')`===
+
+See the [WrapperInterface#api.db_cancel_operation(binding,_status_vector,_database_handle, notes] on `db_cancel_operation()` on WrapperInterface.
+
+=7. Error handling=
+
+Calls in fbclient are not protected. Errors return to the caller in the form of simple  string exceptions. To get more information about an error, run your calls protected and then inspect the status vector object (attribute `sv` of any attachment, transaction, or statement) using ErrorHandling functions.
+
+Objects do not change state when an error occurs, to allow retrying the operation.
+
+=Object state attributes=
+{{{
+attachment.fbapi -> fbclient binding object, as returned by fbclient.binding.new(libname)
+attachment.sv -> status_vector object, as returned by fbclient.status_vector.new()
+transaction.fbapi -> fbclient binding object (the fbapi of one of the attachments)
+transaction.sv -> status_vector object (the status vector of one of the attachments)
+statement.fbapi -> fbclient binding object (attachment's fbapi)
+statement.sv -> status_vector object (attachment's sv)
+
+attachment.transactions -> hash of active transactions on this attachment
+attachment.statements -> hash of active statements on this attachment
+transaction.attachments -> hash of attachments this transaction spans
+transaction.statements -> hash of active statements on this transaction
+statement.attachment -> the attachment this statement executes on
+statement.transaction -> the transaction this statement executes on
+xsqlvar.statement -> statement this xsqlvar object belongs to
+}}}
+
+=Module globals=
+{{{
+attachment_class -> default table that attachment objects inherit
+transaction_class -> default table that transaction objects inherit
+statement_class -> default table that statement objects inherit
+}}}
+
+=Further reading=
+
+You can find a terse but complete description of this API plus more usage notes in the  [http://code.google.com/p/fbclient/source/browse/lua/fbclient/class.lua source code].<br>
+For more usage examples checkout the [http://code.google.com/p/fbclient/source/browse/unit-tests/test_class.lua test unit].
